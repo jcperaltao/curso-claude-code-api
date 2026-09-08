@@ -6,6 +6,7 @@ módulo no abre conexiones ni crea esquema.
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
 from functools import lru_cache
 
 from sqlalchemy.ext.asyncio import (
@@ -35,3 +36,10 @@ def get_sessionmaker() -> async_sessionmaker[AsyncSession]:
     """Devuelve la fábrica de sesiones async ligada al engine."""
 
     return async_sessionmaker(get_engine(), expire_on_commit=False)
+
+
+async def get_session() -> AsyncIterator[AsyncSession]:
+    """Dependencia FastAPI: cede una sesión y la cierra al terminar la petición."""
+
+    async with get_sessionmaker()() as session:
+        yield session

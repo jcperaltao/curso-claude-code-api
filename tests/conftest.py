@@ -14,13 +14,20 @@ import sys
 from collections.abc import AsyncIterator
 from pathlib import Path
 
+import httpx
 import pytest
 import pytest_asyncio
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+from sqlalchemy.ext.asyncio import (
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
 
 from app.config import get_database_url
+from app.db import get_session
+from app.main import app
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -85,4 +92,32 @@ async def db_session(postgres_schema: None) -> AsyncIterator[AsyncSession]:
                 await session.close()
                 await transaccion.rollback()
     finally:
+        await engine.dispose()
+
+
+@pytest_asyncio.fixture
+async def api_client(postgres_schema: None) -> AsyncIterator[httpx.AsyncClient]:
+    """Cliente HTTP contra la app ASGI.
+
+    La dependencia ``get_session`` se sustituye por una ligada a un engine
+    efímero propio del test, para no tocar el engine cacheado de la aplicación
+    ni arrastrarlo entre bucles de eventos.
+    """
+
+    engine = create_async_engine(get_database_url())
+    maker = async_sessionmaker(engine, expire_on_commit=False)
+
+    async def _session_override() -> AsyncIterator[AsyncSession]:
+        async with maker() as session:
+            yield session
+
+    app.dependency_overrides[get_session] = _session_override
+    try:
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(
+            transport=transport, base_url="http://test"
+        ) as client:
+            yield client
+    finally:
+        app.dependency_overrides.pop(get_session, None)
         await engine.dispose()
