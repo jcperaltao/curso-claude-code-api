@@ -29,10 +29,13 @@ uv run ruff check .
 # 4. Levantar PostgreSQL (servicio db)
 docker compose up -d
 
-# 5. Servir la API en local
+# 5. Aplicar las migraciones
+uv run alembic upgrade head
+
+# 6. Servir la API en local
 uv run uvicorn app.main:app --reload
 
-# 6. Parar PostgreSQL al terminar
+# 7. Parar PostgreSQL al terminar
 docker compose down
 ```
 
