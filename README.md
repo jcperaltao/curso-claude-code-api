@@ -39,6 +39,10 @@ uv run uvicorn app.main:app --reload
 docker compose down
 ```
 
+Las migraciones se bajan igual que se suben: `uv run alembic downgrade -1`
+revierte la última revisión aplicada y `uv run alembic downgrade base` deja la
+base en el estado previo a la primera migración.
+
 Comprueba la salud con la API en marcha:
 
 ```bash
