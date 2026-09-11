@@ -24,6 +24,15 @@ async def test_crear_proyecto_devuelve_201_y_el_recurso(
     assert isinstance(cuerpo["id"], int)
 
 
+async def test_crear_proyecto_sin_name_devuelve_422(
+    api_client: httpx.AsyncClient,
+) -> None:
+    response = await api_client.post("/projects", json={"description": "Sin nombre"})
+
+    assert response.status_code == 422
+    assert "detail" in response.json()
+
+
 async def test_crear_proyecto_esquema_exacto(api_client: httpx.AsyncClient) -> None:
     response = await api_client.post(
         "/projects", json={"name": "Casa", "description": "Tareas domésticas"}
