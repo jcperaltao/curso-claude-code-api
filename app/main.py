@@ -3,11 +3,11 @@ from typing import Annotated
 
 from fastapi import Depends, FastAPI, HTTPException
 from pydantic import BaseModel, ConfigDict
-from sqlalchemy import select
+from sqlalchemy import exists, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_session
-from app.models import Project, State
+from app.models import Project, State, Task
 
 app = FastAPI(title="TaskFlow API")
 
@@ -119,3 +119,20 @@ async def update_project(
     await session.commit()
     await session.refresh(project)
     return project
+
+
+@app.delete("/projects/{project_id}", status_code=204)
+async def delete_project(
+    project_id: int,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> None:
+    """Borra un proyecto. 409 si tiene tareas, 404 si no existe, sin cascada."""
+
+    project = await _get_project_or_404(project_id, session)
+    tiene_tareas = await session.scalar(
+        select(exists().where(Task.project_id == project_id))
+    )
+    if tiene_tareas:
+        raise HTTPException(status_code=409, detail="El proyecto tiene tareas")
+    await session.delete(project)
+    await session.commit()
