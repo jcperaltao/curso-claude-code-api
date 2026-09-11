@@ -1,7 +1,7 @@
 from collections.abc import Sequence
 from typing import Annotated
 
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, HTTPException
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -38,6 +38,17 @@ class ProjectCreate(BaseModel):
     description: str | None = None
 
 
+async def _get_project_or_404(
+    project_id: int, session: AsyncSession
+) -> Project:
+    """Devuelve el proyecto o corta con 404 si no existe."""
+
+    project = await session.get(Project, project_id)
+    if project is None:
+        raise HTTPException(status_code=404, detail="Proyecto no encontrado")
+    return project
+
+
 @app.get("/health")
 async def health() -> dict[str, str]:
     return {"status": "ok"}
@@ -65,3 +76,23 @@ async def create_project(
     await session.commit()
     await session.refresh(project)
     return project
+
+
+@app.get("/projects", response_model=list[ProjectOut])
+async def list_projects(
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> Sequence[Project]:
+    """Devuelve los proyectos ordenados por ``id`` ascendente."""
+
+    result = await session.execute(select(Project).order_by(Project.id))
+    return result.scalars().all()
+
+
+@app.get("/projects/{project_id}", response_model=ProjectOut)
+async def get_project(
+    project_id: int,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> Project:
+    """Devuelve un proyecto por id, o 404 si no existe."""
+
+    return await _get_project_or_404(project_id, session)

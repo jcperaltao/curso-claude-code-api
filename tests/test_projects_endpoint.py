@@ -29,3 +29,57 @@ async def test_crear_proyecto_esquema_exacto(api_client: httpx.AsyncClient) -> N
     cuerpo = response.json()
     assert set(cuerpo) == {"id", "name", "description"}
     assert cuerpo["description"] == "Tareas domésticas"
+
+
+async def test_listar_proyectos_devuelve_200_ordenado_por_id(
+    api_client: httpx.AsyncClient,
+) -> None:
+    creados = []
+    for nombre in ("Casa", "Trabajo", "Jardín"):
+        respuesta = await api_client.post("/projects", json={"name": nombre})
+        creados.append(respuesta.json()["id"])
+
+    response = await api_client.get("/projects")
+
+    assert response.status_code == 200
+    cuerpo = response.json()
+    assert isinstance(cuerpo, list)
+    assert [proyecto["id"] for proyecto in cuerpo] == sorted(creados)
+
+
+async def test_listar_proyectos_orden_estable_entre_llamadas(
+    api_client: httpx.AsyncClient,
+) -> None:
+    await api_client.post("/projects", json={"name": "Casa"})
+    await api_client.post("/projects", json={"name": "Trabajo"})
+
+    primera = (await api_client.get("/projects")).json()
+    segunda = (await api_client.get("/projects")).json()
+
+    assert [proyecto["id"] for proyecto in primera] == [
+        proyecto["id"] for proyecto in segunda
+    ]
+
+
+async def test_obtener_proyecto_por_id_devuelve_200(
+    api_client: httpx.AsyncClient,
+) -> None:
+    creado = (
+        await api_client.post(
+            "/projects", json={"name": "Casa", "description": "Tareas"}
+        )
+    ).json()
+
+    response = await api_client.get(f"/projects/{creado['id']}")
+
+    assert response.status_code == 200
+    assert response.json() == creado
+
+
+async def test_obtener_proyecto_inexistente_devuelve_404(
+    api_client: httpx.AsyncClient,
+) -> None:
+    response = await api_client.get("/projects/999999")
+
+    assert response.status_code == 404
+    assert set(response.json()) == {"detail"}
