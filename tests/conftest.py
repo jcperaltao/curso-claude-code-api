@@ -20,8 +20,8 @@ import pytest_asyncio
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import (
+    AsyncConnection,
     AsyncSession,
-    async_sessionmaker,
     create_async_engine,
 )
 
@@ -70,46 +70,65 @@ def postgres_schema() -> None:
 
 
 @pytest_asyncio.fixture
-async def db_session(postgres_schema: None) -> AsyncIterator[AsyncSession]:
-    """Cede una sesión async cuya transacción se revierte al acabar el test.
+async def _connection(postgres_schema: None) -> AsyncIterator[AsyncConnection]:
+    """Conexión única por test, con una transacción que se revierte al final.
 
-    Cada test trabaja dentro de una transacción envolvente que se descarta al
-    final, de modo que lo que escriba no se ve desde otros tests.
+    ``db_session`` y ``api_client`` comparten esta misma conexión: lo que uno
+    escribe (con o sin ``commit()``) lo ve el otro dentro del mismo test, y
+    todo se revierte junto al acabar, sin dejar rastro en la base compartida.
     """
 
     engine = create_async_engine(get_database_url())
     try:
         async with engine.connect() as conn:
             transaccion = await conn.begin()
-            session = AsyncSession(
-                bind=conn,
-                expire_on_commit=False,
-                join_transaction_mode="create_savepoint",
-            )
             try:
-                yield session
+                yield conn
             finally:
-                await session.close()
                 await transaccion.rollback()
     finally:
         await engine.dispose()
 
 
 @pytest_asyncio.fixture
-async def api_client(postgres_schema: None) -> AsyncIterator[httpx.AsyncClient]:
-    """Cliente HTTP contra la app ASGI.
+async def db_session(_connection: AsyncConnection) -> AsyncIterator[AsyncSession]:
+    """Cede una sesión async ligada a la conexión de prueba del test.
 
-    La dependencia ``get_session`` se sustituye por una ligada a un engine
-    efímero propio del test, para no tocar el engine cacheado de la aplicación
-    ni arrastrarlo entre bucles de eventos.
+    Usa un savepoint propio sobre la transacción envolvente de ``_connection``,
+    así que lo que escriba se revierte con ella al final del test.
     """
 
-    engine = create_async_engine(get_database_url())
-    maker = async_sessionmaker(engine, expire_on_commit=False)
+    session = AsyncSession(
+        bind=_connection,
+        expire_on_commit=False,
+        join_transaction_mode="create_savepoint",
+    )
+    try:
+        yield session
+    finally:
+        await session.close()
+
+
+@pytest_asyncio.fixture
+async def api_client(_connection: AsyncConnection) -> AsyncIterator[httpx.AsyncClient]:
+    """Cliente HTTP contra la app ASGI.
+
+    La dependencia ``get_session`` se sustituye por una sesión ligada a la
+    misma conexión de prueba que ``db_session`` (savepoint propio, igual
+    patrón), en vez de crear un engine y una sesión nuevos por request: así
+    un ``commit()`` del endpoint no persiste de verdad en la base compartida,
+    y una fila que un test inserte con ``db_session`` es visible para las
+    peticiones que ese mismo test haga con este cliente.
+    """
+
+    session = AsyncSession(
+        bind=_connection,
+        expire_on_commit=False,
+        join_transaction_mode="create_savepoint",
+    )
 
     async def _session_override() -> AsyncIterator[AsyncSession]:
-        async with maker() as session:
-            yield session
+        yield session
 
     app.dependency_overrides[get_session] = _session_override
     try:
@@ -120,4 +139,4 @@ async def api_client(postgres_schema: None) -> AsyncIterator[httpx.AsyncClient]:
             yield client
     finally:
         app.dependency_overrides.pop(get_session, None)
-        await engine.dispose()
+        await session.close()

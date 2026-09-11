@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_session
-from app.models import State
+from app.models import Project, State
 
 app = FastAPI(title="TaskFlow API")
 
@@ -19,6 +19,23 @@ class StateOut(BaseModel):
 
     id: int
     code: str
+
+
+class ProjectOut(BaseModel):
+    """Representación pública de un proyecto: ``id``, ``name`` y ``description``."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    name: str
+    description: str | None
+
+
+class ProjectCreate(BaseModel):
+    """Cuerpo de entrada para crear un proyecto."""
+
+    name: str
+    description: str | None = None
 
 
 @app.get("/health")
@@ -34,3 +51,17 @@ async def list_states(
 
     result = await session.execute(select(State).order_by(State.position, State.id))
     return result.scalars().all()
+
+
+@app.post("/projects", response_model=ProjectOut, status_code=201)
+async def create_project(
+    datos: ProjectCreate,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> Project:
+    """Crea un proyecto y devuelve el recurso creado."""
+
+    project = Project(name=datos.name, description=datos.description)
+    session.add(project)
+    await session.commit()
+    await session.refresh(project)
+    return project
