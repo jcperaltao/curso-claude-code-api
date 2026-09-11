@@ -25,5 +25,9 @@
       "Bash(docker compose down --volumes)",
       "Bash(docker compose down --volumes *)"
     ]
+  },
+  "attribution": {
+    "commit": "",
+    "pr": ""
   }
 }
