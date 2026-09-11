@@ -83,3 +83,50 @@ async def test_obtener_proyecto_inexistente_devuelve_404(
 
     assert response.status_code == 404
     assert set(response.json()) == {"detail"}
+
+
+async def test_actualizar_solo_name_no_toca_description(
+    api_client: httpx.AsyncClient,
+) -> None:
+    creado = (
+        await api_client.post(
+            "/projects", json={"name": "Casa", "description": "Tareas"}
+        )
+    ).json()
+
+    response = await api_client.patch(
+        f"/projects/{creado['id']}", json={"name": "Casa Nueva"}
+    )
+
+    assert response.status_code == 200
+    cuerpo = response.json()
+    assert cuerpo["name"] == "Casa Nueva"
+    assert cuerpo["description"] == "Tareas"
+
+
+async def test_actualizar_solo_description_no_toca_name(
+    api_client: httpx.AsyncClient,
+) -> None:
+    creado = (
+        await api_client.post(
+            "/projects", json={"name": "Casa", "description": "Tareas"}
+        )
+    ).json()
+
+    response = await api_client.patch(
+        f"/projects/{creado['id']}", json={"description": "Otra cosa"}
+    )
+
+    assert response.status_code == 200
+    cuerpo = response.json()
+    assert cuerpo["name"] == "Casa"
+    assert cuerpo["description"] == "Otra cosa"
+
+
+async def test_actualizar_proyecto_inexistente_devuelve_404(
+    api_client: httpx.AsyncClient,
+) -> None:
+    response = await api_client.patch("/projects/999999", json={"name": "X"})
+
+    assert response.status_code == 404
+    assert set(response.json()) == {"detail"}

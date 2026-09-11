@@ -38,6 +38,13 @@ class ProjectCreate(BaseModel):
     description: str | None = None
 
 
+class ProjectUpdate(BaseModel):
+    """Cuerpo de entrada para actualizar un proyecto: solo lo enviado cambia."""
+
+    name: str | None = None
+    description: str | None = None
+
+
 async def _get_project_or_404(
     project_id: int, session: AsyncSession
 ) -> Project:
@@ -96,3 +103,19 @@ async def get_project(
     """Devuelve un proyecto por id, o 404 si no existe."""
 
     return await _get_project_or_404(project_id, session)
+
+
+@app.patch("/projects/{project_id}", response_model=ProjectOut)
+async def update_project(
+    project_id: int,
+    datos: ProjectUpdate,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> Project:
+    """Actualiza solo los campos enviados en el cuerpo, o 404 si no existe."""
+
+    project = await _get_project_or_404(project_id, session)
+    for campo, valor in datos.model_dump(exclude_unset=True).items():
+        setattr(project, campo, valor)
+    await session.commit()
+    await session.refresh(project)
+    return project
