@@ -270,3 +270,112 @@ async def test_obtener_tarea_inexistente_devuelve_404(
 
     assert response.status_code == 404
     assert set(response.json()) == {"detail"}
+async def test_actualizar_solo_title_no_toca_description(
+    api_client: httpx.AsyncClient,
+) -> None:
+    project_id = await _crear_proyecto(api_client)
+    state_id = (await _obtener_state_ids(api_client))[0]
+    creada = (
+        await api_client.post(
+            "/tasks",
+            json={
+                "title": "Regar",
+                "description": "Tarea",
+                "project_id": project_id,
+                "state_id": state_id,
+            },
+        )
+    ).json()
+
+    response = await api_client.patch(f"/tasks/{creada['id']}", json={"title": "Regar más"})
+
+    assert response.status_code == 200
+    cuerpo = response.json()
+    assert cuerpo["title"] == "Regar más"
+    assert cuerpo["description"] == "Tarea"
+
+
+async def test_actualizar_state_id_a_uno_existente(
+    api_client: httpx.AsyncClient,
+) -> None:
+    project_id = await _crear_proyecto(api_client)
+    state_ids = await _obtener_state_ids(api_client)
+    creada = (
+        await api_client.post(
+            "/tasks",
+            json={"title": "Regar", "project_id": project_id, "state_id": state_ids[0]},
+        )
+    ).json()
+
+    response = await api_client.patch(
+        f"/tasks/{creada['id']}", json={"state_id": state_ids[1]}
+    )
+
+    assert response.status_code == 200
+    assert response.json()["state_id"] == state_ids[1]
+
+
+async def test_actualizar_con_project_id_inexistente_devuelve_404(
+    api_client: httpx.AsyncClient,
+) -> None:
+    project_id = await _crear_proyecto(api_client)
+    state_id = (await _obtener_state_ids(api_client))[0]
+    creada = (
+        await api_client.post(
+            "/tasks",
+            json={"title": "Regar", "project_id": project_id, "state_id": state_id},
+        )
+    ).json()
+
+    response = await api_client.patch(
+        f"/tasks/{creada['id']}", json={"project_id": 999999}
+    )
+
+    assert response.status_code == 404
+    assert set(response.json()) == {"detail"}
+
+
+async def test_actualizar_con_state_id_inexistente_devuelve_404(
+    api_client: httpx.AsyncClient,
+) -> None:
+    project_id = await _crear_proyecto(api_client)
+    state_id = (await _obtener_state_ids(api_client))[0]
+    creada = (
+        await api_client.post(
+            "/tasks",
+            json={"title": "Regar", "project_id": project_id, "state_id": state_id},
+        )
+    ).json()
+
+    response = await api_client.patch(
+        f"/tasks/{creada['id']}", json={"state_id": 999999}
+    )
+
+    assert response.status_code == 404
+    assert set(response.json()) == {"detail"}
+
+
+async def test_actualizar_con_titulo_vacio_devuelve_422(
+    api_client: httpx.AsyncClient,
+) -> None:
+    project_id = await _crear_proyecto(api_client)
+    state_id = (await _obtener_state_ids(api_client))[0]
+    creada = (
+        await api_client.post(
+            "/tasks",
+            json={"title": "Regar", "project_id": project_id, "state_id": state_id},
+        )
+    ).json()
+
+    response = await api_client.patch(f"/tasks/{creada['id']}", json={"title": "   "})
+
+    assert response.status_code == 422
+
+
+async def test_actualizar_tarea_inexistente_devuelve_404(
+    api_client: httpx.AsyncClient,
+) -> None:
+    response = await api_client.patch("/tasks/999999", json={"title": "X"})
+
+    assert response.status_code == 404
+    assert set(response.json()) == {"detail"}

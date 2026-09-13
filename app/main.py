@@ -86,6 +86,22 @@ class TaskCreate(BaseModel):
         return _normalizar_titulo(valor)
 
 
+class TaskUpdate(BaseModel):
+    """Cuerpo de entrada para actualizar una tarea: solo lo enviado cambia."""
+
+    title: str | None = None
+    description: str | None = None
+    project_id: int | None = None
+    state_id: int | None = None
+
+    @field_validator("title")
+    @classmethod
+    def _validar_title(cls, valor: str | None) -> str | None:
+        if valor is None:
+            return None
+        return _normalizar_titulo(valor)
+
+
 async def _get_project_or_404(
     project_id: int, session: AsyncSession
 ) -> Project:
@@ -245,3 +261,24 @@ async def get_task(
     """Devuelve una tarea por id, o 404 si no existe."""
 
     return await _get_task_or_404(task_id, session)
+
+
+@app.patch("/tasks/{task_id}", response_model=TaskOut)
+async def update_task(
+    task_id: int,
+    datos: TaskUpdate,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> Task:
+    """Actualiza solo los campos enviados, validando proyecto y estado si cambian."""
+
+    task = await _get_task_or_404(task_id, session)
+    campos = datos.model_dump(exclude_unset=True)
+    if "project_id" in campos:
+        await _get_project_or_404(campos["project_id"], session)
+    if "state_id" in campos:
+        await _get_state_or_404(campos["state_id"], session)
+    for campo, valor in campos.items():
+        setattr(task, campo, valor)
+    await session.commit()
+    await session.refresh(task)
+    return task
