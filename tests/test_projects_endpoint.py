@@ -7,9 +7,10 @@ ids inexistentes, orden estable y esquema de respuesta exacto.
 from __future__ import annotations
 
 import httpx
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Task
+from app.models import State, Task
 
 
 async def test_crear_proyecto_devuelve_201_y_el_recurso(
@@ -160,10 +161,14 @@ async def test_borrar_proyecto_con_tareas_devuelve_409(
     api_client: httpx.AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    # No existe POST /tasks todavía: la tarea se inserta directamente contra
-    # la sesión, visible para api_client porque comparten conexión de prueba.
+    # La tarea se inserta directamente contra la sesión, visible para
+    # api_client porque comparten conexión de prueba. title y state_id ya son
+    # NOT NULL desde que Tareas v1 completó la tabla.
     creado = (await api_client.post("/projects", json={"name": "Casa"})).json()
-    db_session.add(Task(project_id=creado["id"]))
+    state_id = await db_session.scalar(select(State.id).limit(1))
+    db_session.add(
+        Task(project_id=creado["id"], title="Regar", state_id=state_id)
+    )
     await db_session.flush()
 
     response = await api_client.delete(f"/projects/{creado['id']}")

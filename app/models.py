@@ -41,13 +41,14 @@ class Project(Base):
 
 
 class Task(Base):
-    """Tabla mínima de tareas: solo lo que Proyectos necesita para su ``409``
-    al borrar un proyecto con tareas. El plan de Tareas añade el resto de
-    columnas (``title``, ``description``, ``state_id``, ``due_at``) sobre
-    esta base; no crea la tabla de nuevo.
+    """Tarea: unidad de trabajo de un proyecto. Ver ``docs/contrato-api.md``,
+    sección "Tareas v1". ``due_at`` llega en la v2; esta tabla aún no la tiene.
     """
 
     __tablename__ = "tasks"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"))
+    title: Mapped[str] = mapped_column()
+    description: Mapped[str | None] = mapped_column(default=None)
+    state_id: Mapped[int] = mapped_column(ForeignKey("states.id"))
