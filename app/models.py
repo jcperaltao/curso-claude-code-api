@@ -6,7 +6,9 @@ esquema ni abre conexiones.
 
 from __future__ import annotations
 
-from sqlalchemy import ForeignKey
+from datetime import datetime
+
+from sqlalchemy import DateTime, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db import Base
@@ -42,7 +44,7 @@ class Project(Base):
 
 class Task(Base):
     """Tarea: unidad de trabajo de un proyecto. Ver ``docs/contrato-api.md``,
-    sección "Tareas v1". ``due_at`` llega en la v2; esta tabla aún no la tiene.
+    secciones "Tareas v1" y "Tareas v2: Fechas Límite".
     """
 
     __tablename__ = "tasks"
@@ -52,3 +54,6 @@ class Task(Base):
     title: Mapped[str] = mapped_column()
     description: Mapped[str | None] = mapped_column(default=None)
     state_id: Mapped[int] = mapped_column(ForeignKey("states.id"))
+    due_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), default=None
+    )
