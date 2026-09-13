@@ -1,8 +1,9 @@
+import unicodedata
 from collections.abc import Sequence
 from typing import Annotated
 
 from fastapi import Depends, FastAPI, HTTPException
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator
 from sqlalchemy import exists, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -10,6 +11,20 @@ from app.db import get_session
 from app.models import Project, State, Task
 
 app = FastAPI(title="TaskFlow API")
+
+# Categorías Unicode sin carácter visible: control, formato y separadores de
+# línea, párrafo y espacio. Un título que, tras recortar los extremos, solo
+# contenga caracteres de estas categorías no deja nada visible.
+_CATEGORIAS_INVISIBLES = {"Cc", "Cf", "Zl", "Zp", "Zs"}
+
+
+def _normalizar_titulo(valor: str) -> str:
+    """Recorta los extremos y rechaza un título sin ningún carácter visible."""
+
+    recortado = valor.strip()
+    if all(unicodedata.category(c) in _CATEGORIAS_INVISIBLES for c in recortado):
+        raise ValueError("El título no puede estar vacío")
+    return recortado
 
 
 class StateOut(BaseModel):
@@ -45,6 +60,32 @@ class ProjectUpdate(BaseModel):
     description: str | None = None
 
 
+class TaskOut(BaseModel):
+    """Representación pública de una tarea v1: sin ``due_at``."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    title: str
+    description: str | None
+    project_id: int
+    state_id: int
+
+
+class TaskCreate(BaseModel):
+    """Cuerpo de entrada para crear una tarea."""
+
+    title: str
+    description: str | None = None
+    project_id: int
+    state_id: int
+
+    @field_validator("title")
+    @classmethod
+    def _validar_title(cls, valor: str) -> str:
+        return _normalizar_titulo(valor)
+
+
 async def _get_project_or_404(
     project_id: int, session: AsyncSession
 ) -> Project:
@@ -54,6 +95,15 @@ async def _get_project_or_404(
     if project is None:
         raise HTTPException(status_code=404, detail="Proyecto no encontrado")
     return project
+
+
+async def _get_state_or_404(state_id: int, session: AsyncSession) -> State:
+    """Devuelve el estado o corta con 404 si no existe."""
+
+    state = await session.get(State, state_id)
+    if state is None:
+        raise HTTPException(status_code=404, detail="Estado no encontrado")
+    return state
 
 
 @app.get("/health")
@@ -136,3 +186,25 @@ async def delete_project(
         raise HTTPException(status_code=409, detail="El proyecto tiene tareas")
     await session.delete(project)
     await session.commit()
+
+
+@app.post("/tasks", response_model=TaskOut, status_code=201)
+async def create_task(
+    datos: TaskCreate,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> Task:
+    """Crea una tarea. Valida que el proyecto y el estado referenciados existan."""
+
+    await _get_project_or_404(datos.project_id, session)
+    await _get_state_or_404(datos.state_id, session)
+
+    task = Task(
+        title=datos.title,
+        description=datos.description,
+        project_id=datos.project_id,
+        state_id=datos.state_id,
+    )
+    session.add(task)
+    await session.commit()
+    await session.refresh(task)
+    return task
