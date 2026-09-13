@@ -106,6 +106,15 @@ async def _get_state_or_404(state_id: int, session: AsyncSession) -> State:
     return state
 
 
+async def _get_task_or_404(task_id: int, session: AsyncSession) -> Task:
+    """Devuelve la tarea o corta con 404 si no existe."""
+
+    task = await session.get(Task, task_id)
+    if task is None:
+        raise HTTPException(status_code=404, detail="Tarea no encontrada")
+    return task
+
+
 @app.get("/health")
 async def health() -> dict[str, str]:
     return {"status": "ok"}
@@ -208,3 +217,31 @@ async def create_task(
     await session.commit()
     await session.refresh(task)
     return task
+
+
+@app.get("/tasks", response_model=list[TaskOut])
+async def list_tasks(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    project_id: int | None = None,
+    state_id: int | None = None,
+) -> Sequence[Task]:
+    """Devuelve las tareas por ``id`` ascendente, filtrando por ``project_id``
+    y/o ``state_id`` cuando se envían, solos o combinados."""
+
+    consulta = select(Task).order_by(Task.id)
+    if project_id is not None:
+        consulta = consulta.where(Task.project_id == project_id)
+    if state_id is not None:
+        consulta = consulta.where(Task.state_id == state_id)
+    result = await session.execute(consulta)
+    return result.scalars().all()
+
+
+@app.get("/tasks/{task_id}", response_model=TaskOut)
+async def get_task(
+    task_id: int,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> Task:
+    """Devuelve una tarea por id, o 404 si no existe."""
+
+    return await _get_task_or_404(task_id, session)

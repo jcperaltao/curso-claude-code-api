@@ -131,3 +131,142 @@ async def test_crear_tarea_con_estado_inexistente_devuelve_404(
 
     assert response.status_code == 404
     assert set(response.json()) == {"detail"}
+async def test_listar_tareas_devuelve_200_ordenado_por_id(
+    api_client: httpx.AsyncClient,
+) -> None:
+    project_id = await _crear_proyecto(api_client)
+    state_id = (await _obtener_state_ids(api_client))[0]
+    creadas = []
+    for titulo in ("Regar", "Barrer", "Cocinar"):
+        respuesta = await api_client.post(
+            "/tasks",
+            json={"title": titulo, "project_id": project_id, "state_id": state_id},
+        )
+        creadas.append(respuesta.json()["id"])
+
+    response = await api_client.get("/tasks")
+
+    assert response.status_code == 200
+    cuerpo = response.json()
+    assert isinstance(cuerpo, list)
+    assert [tarea["id"] for tarea in cuerpo] == sorted(creadas)
+
+
+async def test_listar_tareas_orden_estable_entre_llamadas(
+    api_client: httpx.AsyncClient,
+) -> None:
+    project_id = await _crear_proyecto(api_client)
+    state_id = (await _obtener_state_ids(api_client))[0]
+    await api_client.post(
+        "/tasks", json={"title": "Regar", "project_id": project_id, "state_id": state_id}
+    )
+    await api_client.post(
+        "/tasks", json={"title": "Barrer", "project_id": project_id, "state_id": state_id}
+    )
+
+    primera = (await api_client.get("/tasks")).json()
+    segunda = (await api_client.get("/tasks")).json()
+
+    assert [tarea["id"] for tarea in primera] == [tarea["id"] for tarea in segunda]
+
+
+async def test_listar_tareas_filtra_por_project_id(
+    api_client: httpx.AsyncClient,
+) -> None:
+    project_a = await _crear_proyecto(api_client, "Casa")
+    project_b = await _crear_proyecto(api_client, "Trabajo")
+    state_id = (await _obtener_state_ids(api_client))[0]
+    tarea_a = (
+        await api_client.post(
+            "/tasks", json={"title": "Regar", "project_id": project_a, "state_id": state_id}
+        )
+    ).json()["id"]
+    await api_client.post(
+        "/tasks", json={"title": "Reunión", "project_id": project_b, "state_id": state_id}
+    )
+
+    response = await api_client.get("/tasks", params={"project_id": project_a})
+
+    assert response.status_code == 200
+    assert [tarea["id"] for tarea in response.json()] == [tarea_a]
+
+
+async def test_listar_tareas_filtra_por_state_id(
+    api_client: httpx.AsyncClient,
+) -> None:
+    project_id = await _crear_proyecto(api_client)
+    state_ids = await _obtener_state_ids(api_client)
+    tarea_1 = (
+        await api_client.post(
+            "/tasks",
+            json={"title": "Regar", "project_id": project_id, "state_id": state_ids[0]},
+        )
+    ).json()["id"]
+    await api_client.post(
+        "/tasks",
+        json={"title": "Barrer", "project_id": project_id, "state_id": state_ids[1]},
+    )
+
+    response = await api_client.get("/tasks", params={"state_id": state_ids[0]})
+
+    assert response.status_code == 200
+    assert [tarea["id"] for tarea in response.json()] == [tarea_1]
+
+
+async def test_listar_tareas_filtros_combinados(
+    api_client: httpx.AsyncClient,
+) -> None:
+    project_a = await _crear_proyecto(api_client, "Casa")
+    project_b = await _crear_proyecto(api_client, "Trabajo")
+    state_ids = await _obtener_state_ids(api_client)
+    objetivo = (
+        await api_client.post(
+            "/tasks",
+            json={"title": "Regar", "project_id": project_a, "state_id": state_ids[0]},
+        )
+    ).json()["id"]
+    await api_client.post(
+        "/tasks",
+        json={"title": "Barrer", "project_id": project_a, "state_id": state_ids[1]},
+    )
+    await api_client.post(
+        "/tasks",
+        json={"title": "Reunión", "project_id": project_b, "state_id": state_ids[0]},
+    )
+
+    response = await api_client.get(
+        "/tasks", params={"project_id": project_a, "state_id": state_ids[0]}
+    )
+
+    assert response.status_code == 200
+    assert [tarea["id"] for tarea in response.json()] == [objetivo]
+
+
+async def test_obtener_tarea_por_id_devuelve_200(api_client: httpx.AsyncClient) -> None:
+    project_id = await _crear_proyecto(api_client)
+    state_id = (await _obtener_state_ids(api_client))[0]
+    creada = (
+        await api_client.post(
+            "/tasks",
+            json={
+                "title": "Regar",
+                "description": "Tarea",
+                "project_id": project_id,
+                "state_id": state_id,
+            },
+        )
+    ).json()
+
+    response = await api_client.get(f"/tasks/{creada['id']}")
+
+    assert response.status_code == 200
+    assert response.json() == creada
+
+
+async def test_obtener_tarea_inexistente_devuelve_404(
+    api_client: httpx.AsyncClient,
+) -> None:
+    response = await api_client.get("/tasks/999999")
+
+    assert response.status_code == 404
+    assert set(response.json()) == {"detail"}
