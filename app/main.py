@@ -4,7 +4,14 @@ from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import Depends, FastAPI, HTTPException
-from pydantic import BaseModel, ConfigDict, field_serializer, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    WithJsonSchema,
+    field_serializer,
+    field_validator,
+)
 from sqlalchemy import exists, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -37,12 +44,18 @@ def _validar_due_at(valor: datetime | None) -> datetime | None:
     return valor
 
 
+class ErrorDetail(BaseModel):
+    """Forma estable de un error de negocio: ``{"detail": "<mensaje>"}``."""
+
+    detail: str
+
+
 class StateOut(BaseModel):
     """Representación pública de un estado: exactamente ``id`` y ``code``."""
 
     model_config = ConfigDict(from_attributes=True)
 
-    id: int
+    id: Annotated[int, Field(gt=0)]
     code: str
 
 
@@ -51,7 +64,7 @@ class ProjectOut(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
-    id: int
+    id: Annotated[int, Field(gt=0)]
     name: str
     description: str | None
 
@@ -75,12 +88,18 @@ class TaskOut(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
-    id: int
+    id: Annotated[int, Field(gt=0)]
     title: str
     description: str | None
     project_id: int
     state_id: int
-    due_at: datetime | None
+    due_at: Annotated[
+        datetime | None,
+        WithJsonSchema(
+            {"anyOf": [{"type": "string", "format": "date-time"}, {"type": "null"}]},
+            mode="serialization",
+        ),
+    ]
 
     @field_serializer("due_at")
     def _serializar_due_at(self, valor: datetime | None) -> str | None:
@@ -201,7 +220,11 @@ async def list_projects(
     return result.scalars().all()
 
 
-@app.get("/projects/{project_id}", response_model=ProjectOut)
+@app.get(
+    "/projects/{project_id}",
+    response_model=ProjectOut,
+    responses={404: {"model": ErrorDetail}},
+)
 async def get_project(
     project_id: int,
     session: Annotated[AsyncSession, Depends(get_session)],
@@ -211,7 +234,11 @@ async def get_project(
     return await _get_project_or_404(project_id, session)
 
 
-@app.patch("/projects/{project_id}", response_model=ProjectOut)
+@app.patch(
+    "/projects/{project_id}",
+    response_model=ProjectOut,
+    responses={404: {"model": ErrorDetail}},
+)
 async def update_project(
     project_id: int,
     datos: ProjectUpdate,
@@ -227,7 +254,11 @@ async def update_project(
     return project
 
 
-@app.delete("/projects/{project_id}", status_code=204)
+@app.delete(
+    "/projects/{project_id}",
+    status_code=204,
+    responses={404: {"model": ErrorDetail}, 409: {"model": ErrorDetail}},
+)
 async def delete_project(
     project_id: int,
     session: Annotated[AsyncSession, Depends(get_session)],
@@ -244,7 +275,12 @@ async def delete_project(
     await session.commit()
 
 
-@app.post("/tasks", response_model=TaskOut, status_code=201)
+@app.post(
+    "/tasks",
+    response_model=TaskOut,
+    status_code=201,
+    responses={404: {"model": ErrorDetail}},
+)
 async def create_task(
     datos: TaskCreate,
     session: Annotated[AsyncSession, Depends(get_session)],
@@ -298,7 +334,11 @@ async def list_tasks(
     return result.scalars().all()
 
 
-@app.get("/tasks/{task_id}", response_model=TaskOut)
+@app.get(
+    "/tasks/{task_id}",
+    response_model=TaskOut,
+    responses={404: {"model": ErrorDetail}},
+)
 async def get_task(
     task_id: int,
     session: Annotated[AsyncSession, Depends(get_session)],
@@ -308,7 +348,11 @@ async def get_task(
     return await _get_task_or_404(task_id, session)
 
 
-@app.patch("/tasks/{task_id}", response_model=TaskOut)
+@app.patch(
+    "/tasks/{task_id}",
+    response_model=TaskOut,
+    responses={404: {"model": ErrorDetail}},
+)
 async def update_task(
     task_id: int,
     datos: TaskUpdate,
@@ -329,7 +373,11 @@ async def update_task(
     return task
 
 
-@app.delete("/tasks/{task_id}", status_code=204)
+@app.delete(
+    "/tasks/{task_id}",
+    status_code=204,
+    responses={404: {"model": ErrorDetail}},
+)
 async def delete_task(
     task_id: int,
     session: Annotated[AsyncSession, Depends(get_session)],
