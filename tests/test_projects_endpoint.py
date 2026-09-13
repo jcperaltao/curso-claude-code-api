@@ -178,6 +178,27 @@ async def test_borrar_proyecto_con_tareas_devuelve_409(
     assert (await api_client.get(f"/projects/{creado['id']}")).status_code == 200
 
 
+async def test_borrar_proyecto_con_tarea_creada_por_api_devuelve_409(
+    api_client: httpx.AsyncClient,
+) -> None:
+    # Igual que test_borrar_proyecto_con_tareas_devuelve_409, pero de extremo
+    # a extremo por la API: la tarea se crea con POST /tasks, no insertada
+    # directamente contra la sesión. Quedó sin probar así en
+    # docs/plan-proyectos.md porque /tasks no existía todavía.
+    proyecto = (await api_client.post("/projects", json={"name": "Casa"})).json()
+    state_id = (await api_client.get("/states")).json()[0]["id"]
+    await api_client.post(
+        "/tasks",
+        json={"title": "Regar", "project_id": proyecto["id"], "state_id": state_id},
+    )
+
+    response = await api_client.delete(f"/projects/{proyecto['id']}")
+
+    assert response.status_code == 409
+    assert set(response.json()) == {"detail"}
+    assert (await api_client.get(f"/projects/{proyecto['id']}")).status_code == 200
+
+
 async def test_borrar_proyecto_inexistente_devuelve_404(
     api_client: httpx.AsyncClient,
 ) -> None:
