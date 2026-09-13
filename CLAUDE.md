@@ -27,12 +27,6 @@ uv run ruff check .     # pasar el linter
 - Los tests que ejercitan persistencia corren contra **PostgreSQL, no SQLite**:
   SQLite no reproduce las mismas restricciones, tipos ni migraciones.
 
-## Tests
-
-- No se debilita ni elimina un test existente para conseguir verde. Si el
-  comportamiento acordado cambió, primero cambia el contrato y después el test,
-  en un commit separado.
-
 ## `.env`
 
 - Puede contener secretos. No lo abras, muestres, edites ni añadas a Git.
