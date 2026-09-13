@@ -54,6 +54,14 @@ que entienda archivos `.http` — por ejemplo la extensión
 de VS Code — y ejecuta el primer bloque (`GET /health`) con "Send Request";
 el resto sigue en orden desde ahí.
 
+[`openapi.json`](openapi.json), en la raíz del repositorio, es la
+especificación OpenAPI de la API, exportada sin levantar el servidor ni
+tocar la base de datos. Se regenera así:
+
+```bash
+uv run python -c "import json; from app.main import app; print(json.dumps(app.openapi(), indent=2, ensure_ascii=False))" > openapi.json
+```
+
 Cuando termines, para PostgreSQL:
 
 ```bash
