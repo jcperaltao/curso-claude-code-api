@@ -131,6 +131,8 @@ async def test_crear_tarea_con_estado_inexistente_devuelve_404(
 
     assert response.status_code == 404
     assert set(response.json()) == {"detail"}
+
+
 async def test_listar_tareas_devuelve_200_ordenado_por_id(
     api_client: httpx.AsyncClient,
 ) -> None:
@@ -270,6 +272,8 @@ async def test_obtener_tarea_inexistente_devuelve_404(
 
     assert response.status_code == 404
     assert set(response.json()) == {"detail"}
+
+
 async def test_actualizar_solo_title_no_toca_description(
     api_client: httpx.AsyncClient,
 ) -> None:
@@ -376,6 +380,32 @@ async def test_actualizar_tarea_inexistente_devuelve_404(
     api_client: httpx.AsyncClient,
 ) -> None:
     response = await api_client.patch("/tasks/999999", json={"title": "X"})
+
+    assert response.status_code == 404
+    assert set(response.json()) == {"detail"}
+
+
+async def test_borrar_tarea_devuelve_204(api_client: httpx.AsyncClient) -> None:
+    project_id = await _crear_proyecto(api_client)
+    state_id = (await _obtener_state_ids(api_client))[0]
+    creada = (
+        await api_client.post(
+            "/tasks",
+            json={"title": "Regar", "project_id": project_id, "state_id": state_id},
+        )
+    ).json()
+
+    response = await api_client.delete(f"/tasks/{creada['id']}")
+
+    assert response.status_code == 204
+    assert response.content == b""
+    assert (await api_client.get(f"/tasks/{creada['id']}")).status_code == 404
+
+
+async def test_borrar_tarea_inexistente_devuelve_404(
+    api_client: httpx.AsyncClient,
+) -> None:
+    response = await api_client.delete("/tasks/999999")
 
     assert response.status_code == 404
     assert set(response.json()) == {"detail"}

@@ -282,3 +282,15 @@ async def update_task(
     await session.commit()
     await session.refresh(task)
     return task
+
+
+@app.delete("/tasks/{task_id}", status_code=204)
+async def delete_task(
+    task_id: int,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> None:
+    """Borra una tarea. 404 si no existe."""
+
+    task = await _get_task_or_404(task_id, session)
+    await session.delete(task)
+    await session.commit()
