@@ -1,9 +1,10 @@
 import unicodedata
 from collections.abc import Sequence
+from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import Depends, FastAPI, HTTPException
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, field_serializer, field_validator
 from sqlalchemy import exists, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -25,6 +26,15 @@ def _normalizar_titulo(valor: str) -> str:
     if all(unicodedata.category(c) in _CATEGORIAS_INVISIBLES for c in recortado):
         raise ValueError("El título no puede estar vacío")
     return recortado
+
+
+def _validar_due_at(valor: datetime | None) -> datetime | None:
+    """Rechaza una fecha sin zona horaria: es ambigua y el contrato no la
+    supone por su cuenta."""
+
+    if valor is not None and valor.tzinfo is None:
+        raise ValueError("due_at debe incluir zona horaria")
+    return valor
 
 
 class StateOut(BaseModel):
@@ -61,7 +71,7 @@ class ProjectUpdate(BaseModel):
 
 
 class TaskOut(BaseModel):
-    """Representación pública de una tarea v1: sin ``due_at``."""
+    """Representación pública de una tarea (v2): incluye ``due_at``."""
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -70,6 +80,15 @@ class TaskOut(BaseModel):
     description: str | None
     project_id: int
     state_id: int
+    due_at: datetime | None
+
+    @field_serializer("due_at")
+    def _serializar_due_at(self, valor: datetime | None) -> str | None:
+        """Siempre en UTC, con ``Z`` y sin microsegundos."""
+
+        if valor is None:
+            return None
+        return valor.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 class TaskCreate(BaseModel):
@@ -79,11 +98,17 @@ class TaskCreate(BaseModel):
     description: str | None = None
     project_id: int
     state_id: int
+    due_at: datetime | None = None
 
     @field_validator("title")
     @classmethod
     def _validar_title(cls, valor: str) -> str:
         return _normalizar_titulo(valor)
+
+    @field_validator("due_at")
+    @classmethod
+    def _validar_due_at(cls, valor: datetime | None) -> datetime | None:
+        return _validar_due_at(valor)
 
 
 class TaskUpdate(BaseModel):
@@ -93,6 +118,7 @@ class TaskUpdate(BaseModel):
     description: str | None = None
     project_id: int | None = None
     state_id: int | None = None
+    due_at: datetime | None = None
 
     @field_validator("title")
     @classmethod
@@ -100,6 +126,11 @@ class TaskUpdate(BaseModel):
         if valor is None:
             return None
         return _normalizar_titulo(valor)
+
+    @field_validator("due_at")
+    @classmethod
+    def _validar_due_at(cls, valor: datetime | None) -> datetime | None:
+        return _validar_due_at(valor)
 
 
 async def _get_project_or_404(
@@ -228,6 +259,7 @@ async def create_task(
         description=datos.description,
         project_id=datos.project_id,
         state_id=datos.state_id,
+        due_at=datos.due_at,
     )
     session.add(task)
     await session.commit()
@@ -240,15 +272,28 @@ async def list_tasks(
     session: Annotated[AsyncSession, Depends(get_session)],
     project_id: int | None = None,
     state_id: int | None = None,
+    overdue: bool | None = None,
 ) -> Sequence[Task]:
-    """Devuelve las tareas por ``id`` ascendente, filtrando por ``project_id``
-    y/o ``state_id`` cuando se envían, solos o combinados."""
+    """Devuelve las tareas por ``id`` ascendente, filtrando por ``project_id``,
+    ``state_id`` y/o ``overdue`` cuando se envían, solos o combinados.
+
+    ``overdue=true`` exige ``due_at`` anterior al instante de evaluación y
+    estado distinto de ``HECHA``; una tarea sin ``due_at`` nunca es vencida
+    (la comparación con ``NULL`` no la deja pasar). Cualquier otro valor de
+    ``overdue`` no aplica el filtro.
+    """
 
     consulta = select(Task).order_by(Task.id)
     if project_id is not None:
         consulta = consulta.where(Task.project_id == project_id)
     if state_id is not None:
         consulta = consulta.where(Task.state_id == state_id)
+    if overdue:
+        ahora = datetime.now(UTC)
+        consulta = consulta.join(State, State.id == Task.state_id).where(
+            Task.due_at < ahora,
+            State.code != "HECHA",
+        )
     result = await session.execute(consulta)
     return result.scalars().all()
 
