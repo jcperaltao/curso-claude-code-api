@@ -1,0 +1,197 @@
+@baseUrl = http://localhost:8000
+
+### Salud: la API responde
+GET {{baseUrl}}/health
+
+
+### Estados: catálogo fijo, sembrado por migración (PENDIENTE, EN_CURSO, BLOQUEADA, HECHA)
+# @name listarEstados
+GET {{baseUrl}}/states
+
+
+### Proyectos: crear el proyecto que sostiene la mayoría de las peticiones siguientes
+# @name crearProyecto
+POST {{baseUrl}}/projects
+Content-Type: application/json
+
+{
+  "name": "Casa",
+  "description": "Tareas domésticas"
+}
+
+
+### Proyectos: crear un segundo proyecto, reservado para el 409 de borrado con tareas
+# @name crearProyectoConTareas
+POST {{baseUrl}}/projects
+Content-Type: application/json
+
+{
+  "name": "Oficina",
+  "description": null
+}
+
+
+### Proyectos: listar, orden estable por id ascendente
+GET {{baseUrl}}/projects
+
+
+### Proyectos: leer uno existente
+GET {{baseUrl}}/projects/{{crearProyecto.response.body.$.id}}
+
+
+### Proyectos: id inexistente devuelve 404
+GET {{baseUrl}}/projects/999999
+
+
+### Proyectos: actualización parcial de solo description
+PATCH {{baseUrl}}/projects/{{crearProyecto.response.body.$.id}}
+Content-Type: application/json
+
+{
+  "description": "Tareas domésticas y mantenimiento"
+}
+
+
+### Tareas: crear con due_at con zona -03:00, se sirve luego en UTC con Z
+# @name crearTarea
+POST {{baseUrl}}/tasks
+Content-Type: application/json
+
+{
+  "title": "Regar las plantas",
+  "description": null,
+  "project_id": {{crearProyecto.response.body.$.id}},
+  "state_id": {{listarEstados.response.body.$[?(@.code=='PENDIENTE')].id}},
+  "due_at": "2026-03-01T09:00:00-03:00"
+}
+
+
+### Tareas: crear una segunda tarea, con due_at ya vencido, para el filtro overdue
+# @name crearTareaVencida
+POST {{baseUrl}}/tasks
+Content-Type: application/json
+
+{
+  "title": "Pagar el alquiler",
+  "project_id": {{crearProyecto.response.body.$.id}},
+  "state_id": {{listarEstados.response.body.$[?(@.code=='PENDIENTE')].id}},
+  "due_at": "2020-01-01T00:00:00Z"
+}
+
+
+### Tareas: crear la tarea que sostiene el 409 al borrar el segundo proyecto
+# @name crearTareaParaConflicto
+POST {{baseUrl}}/tasks
+Content-Type: application/json
+
+{
+  "title": "Tarea que bloquea el borrado del proyecto",
+  "project_id": {{crearProyectoConTareas.response.body.$.id}},
+  "state_id": {{listarEstados.response.body.$[?(@.code=='PENDIENTE')].id}}
+}
+
+
+### Tareas: título vacío (solo espacios) devuelve 422
+POST {{baseUrl}}/tasks
+Content-Type: application/json
+
+{
+  "title": "   ",
+  "project_id": {{crearProyecto.response.body.$.id}},
+  "state_id": {{listarEstados.response.body.$[?(@.code=='PENDIENTE')].id}}
+}
+
+
+### Tareas: project_id inexistente devuelve 404
+POST {{baseUrl}}/tasks
+Content-Type: application/json
+
+{
+  "title": "Tarea huérfana",
+  "project_id": 999999,
+  "state_id": {{listarEstados.response.body.$[?(@.code=='PENDIENTE')].id}}
+}
+
+
+### Tareas: state_id inexistente devuelve 404
+POST {{baseUrl}}/tasks
+Content-Type: application/json
+
+{
+  "title": "Tarea sin estado válido",
+  "project_id": {{crearProyecto.response.body.$.id}},
+  "state_id": 999999
+}
+
+
+### Tareas: due_at sin zona horaria devuelve 422 (fecha ambigua)
+POST {{baseUrl}}/tasks
+Content-Type: application/json
+
+{
+  "title": "Tarea con fecha ambigua",
+  "project_id": {{crearProyecto.response.body.$.id}},
+  "state_id": {{listarEstados.response.body.$[?(@.code=='PENDIENTE')].id}},
+  "due_at": "2026-03-01T09:00:00"
+}
+
+
+### Tareas: listar, orden estable por id ascendente
+GET {{baseUrl}}/tasks
+
+
+### Tareas: filtrar por project_id
+GET {{baseUrl}}/tasks?project_id={{crearProyecto.response.body.$.id}}
+
+
+### Tareas: filtrar por state_id
+GET {{baseUrl}}/tasks?state_id={{listarEstados.response.body.$[?(@.code=='PENDIENTE')].id}}
+
+
+### Tareas: filtrar por project_id y state_id combinados
+GET {{baseUrl}}/tasks?project_id={{crearProyecto.response.body.$.id}}&state_id={{listarEstados.response.body.$[?(@.code=='PENDIENTE')].id}}
+
+
+### Tareas: filtrar por overdue=true (solo la vencida y no HECHA aparece)
+GET {{baseUrl}}/tasks?overdue=true
+
+
+### Tareas: leer una existente
+GET {{baseUrl}}/tasks/{{crearTarea.response.body.$.id}}
+
+
+### Tareas: id inexistente devuelve 404
+GET {{baseUrl}}/tasks/999999
+
+
+### Tareas: actualización parcial de due_at (offset distinto, se normaliza a UTC con Z)
+PATCH {{baseUrl}}/tasks/{{crearTarea.response.body.$.id}}
+Content-Type: application/json
+
+{
+  "due_at": "2026-06-15T09:00:00-03:00"
+}
+
+
+### Proyectos: borrar el segundo proyecto con una tarea pendiente devuelve 409
+DELETE {{baseUrl}}/projects/{{crearProyectoConTareas.response.body.$.id}}
+
+
+### Tareas: borrar la tarea que bloqueaba el proyecto, 204 sin cuerpo
+DELETE {{baseUrl}}/tasks/{{crearTareaParaConflicto.response.body.$.id}}
+
+
+### Proyectos: sin tareas, el mismo borrado ahora devuelve 204
+DELETE {{baseUrl}}/projects/{{crearProyectoConTareas.response.body.$.id}}
+
+
+### Tareas: borrar la tarea vencida, 204 sin cuerpo
+DELETE {{baseUrl}}/tasks/{{crearTareaVencida.response.body.$.id}}
+
+
+### Tareas: borrar la tarea principal, 204 sin cuerpo
+DELETE {{baseUrl}}/tasks/{{crearTarea.response.body.$.id}}
+
+
+### Proyectos: borrar el primer proyecto, ya sin tareas, 204 sin cuerpo
+DELETE {{baseUrl}}/projects/{{crearProyecto.response.body.$.id}}
