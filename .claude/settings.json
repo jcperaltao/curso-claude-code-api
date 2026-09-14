@@ -29,5 +29,34 @@
   "attribution": {
     "commit": "",
     "pr": ""
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "if": "Bash(git commit *)",
+            "command": "tmp=\"$(mktemp)\" || exit 1\nif ! uv run python -c \"import json; from app.main import app; print(json.dumps(app.openapi(), indent=2, ensure_ascii=False))\" > \"$tmp\" 2>/dev/null; then\n  rm -f \"$tmp\"\n  printf '%s' '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"No se pudo regenerar openapi.json para comprobarlo: el comando de app.main fallo al ejecutarse. Revisa que la app importe sin errores antes de commitear.\"}}'\n  exit 0\nfi\nif diff -q openapi.json \"$tmp\" >/dev/null 2>&1; then\n  rm -f \"$tmp\"\n  exit 0\nfi\nrm -f \"$tmp\"\nprintf '%s' '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"openapi.json no coincide con lo que genera el codigo ahora mismo. Regeneralo con el comando de regeneracion de README.md, revisa el diff, anade openapi.json a este commit y reintenta con git commit.\"}}'",
+            "timeout": 10,
+            "statusMessage": "Comprobando que openapi.json coincide con el codigo..."
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "file=\"$(jq -r '.tool_input.file_path // empty')\"\ncase \"$file\" in\n  *app/main.py) ;;\n  *) exit 0 ;;\nesac\nif uv run python -c \"import json; from app.main import app; print(json.dumps(app.openapi(), indent=2, ensure_ascii=False))\" > openapi.json 2>/dev/null; then\n  printf '%s' '{\"systemMessage\":\"app/main.py cambio: openapi.json se regenero automaticamente. docs/esquema.md puede haber quedado desactualizado -- si el cambio toco el esquema de datos (tablas, columnas, relaciones), vuelve a invocar la skill describir-esquema para regenerarlo.\"}'\nelse\n  printf '%s' '{\"systemMessage\":\"app/main.py cambio pero openapi.json NO se pudo regenerar automaticamente: la app fallo al importarse. Corrigelo antes de commitear.\"}'\nfi",
+            "timeout": 10,
+            "statusMessage": "Regenerando openapi.json tras editar app/main.py..."
+          }
+        ]
+      }
+    ]
   }
 }
