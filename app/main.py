@@ -214,7 +214,7 @@ async def create_project(
 async def list_projects(
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> Sequence[Project]:
-    """Devuelve todos los proyectos existentes, ordenados por ``id`` ascendente."""
+    """Devuelve los proyectos ordenados por ``id`` ascendente."""
 
     result = await session.execute(select(Project).order_by(Project.id))
     return result.scalars().all()
