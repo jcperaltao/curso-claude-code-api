@@ -44,6 +44,19 @@
           }
         ]
       }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "file=\"$(jq -r '.tool_input.file_path // empty')\"\ncase \"$file\" in\n  *app/main.py) ;;\n  *) exit 0 ;;\nesac\nif uv run python -c \"import json; from app.main import app; print(json.dumps(app.openapi(), indent=2, ensure_ascii=False))\" > openapi.json 2>/dev/null; then\n  printf '%s' '{\"systemMessage\":\"app/main.py cambio: openapi.json se regenero automaticamente. docs/esquema.md puede haber quedado desactualizado -- si el cambio toco el esquema de datos (tablas, columnas, relaciones), vuelve a invocar la skill describir-esquema para regenerarlo.\"}'\nelse\n  printf '%s' '{\"systemMessage\":\"app/main.py cambio pero openapi.json NO se pudo regenerar automaticamente: la app fallo al importarse. Corrigelo antes de commitear.\"}'\nfi",
+            "timeout": 10,
+            "statusMessage": "Regenerando openapi.json tras editar app/main.py..."
+          }
+        ]
+      }
     ]
   }
 }
