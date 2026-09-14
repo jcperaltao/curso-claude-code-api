@@ -53,7 +53,7 @@
     "/projects": {
       "get": {
         "summary": "List Projects",
-        "description": "Devuelve los proyectos ordenados por ``id`` ascendente.",
+        "description": "Devuelve todos los proyectos existentes, ordenados por ``id`` ascendente.",
         "operationId": "list_projects_projects_get",
         "responses": {
           "200": {
